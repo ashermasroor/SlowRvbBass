@@ -63,7 +63,7 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
     with open(file_path, "rb") as f:
-        res = supabase.storage().from_(SUPABASE_BUCKET).upload(destination_name, f, {
+        res = supabase.storage.from_(SUPABASE_BUCKET).upload(destination_name, f, {
             "content-type": "audio/mpeg",
             "x-upsert": "true"
         })
