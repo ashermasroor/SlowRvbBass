@@ -18,9 +18,13 @@ os.makedirs(TMP_DIR, exist_ok=True)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
+if not all([SUPABASE_URL, SUPABASE_KEY, SUPABASE_BUCKET]):
+    raise Exception("Missing Supabase environment variables.")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========== Models ==========
+
 class UploadRequest(BaseModel):
     yt_url: str
 
@@ -31,6 +35,7 @@ class EffectsRequest(BaseModel):
     bass_boost: Optional[bool] = False
 
 # ========== Utility Functions ==========
+
 def short_id():
     return uuid.uuid4().hex[:6]
 
@@ -43,21 +48,20 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
             "-o", output_path,
             yt_url
         ], check=True)
-    except subprocess.CalledProcessError:
-        raise HTTPException(status_code=400, detail="Failed to download YouTube audio")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to download YouTube audio: {e}")
 
     matching_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
     if not matching_files:
-        raise HTTPException(status_code=500, detail="Downloaded file not found")
+        raise HTTPException(status_code=500, detail="Downloaded file not found.")
     return matching_files[0]
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
-    # Skip FFmpeg processing if no effects applied
     if speed == 1.0 and reverb == 0.0 and not bass_boost:
         try:
             subprocess.run(["cp", input_file, output_file], check=True)
         except subprocess.CalledProcessError:
-            raise HTTPException(status_code=500, detail="Failed to copy audio without effects")
+            raise HTTPException(status_code=500, detail="Failed to copy audio without effects.")
         return
 
     filters = []
@@ -74,18 +78,22 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
     command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
 
     try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError:
-        raise HTTPException(status_code=500, detail="Failed to apply audio effects")
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr.decode()}")
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
-    with open(file_path, "rb") as f:
-        res = supabase.storage.from_(SUPABASE_BUCKET).upload(destination_name, f, {
-            "content-type": mimetypes.guess_type(file_path)[0] or "audio/mpeg",
-            "x-upsert": "true"
-        })
-        if not res:
-            raise HTTPException(status_code=500, detail="Upload to Supabase failed")
+    try:
+        with open(file_path, "rb") as f:
+            res = supabase.storage.from_(SUPABASE_BUCKET).upload(destination_name, f, {
+                "content-type": mimetypes.guess_type(file_path)[0] or "audio/mpeg",
+                "x-upsert": "true"
+            })
+        if not res or "error" in res:
+            raise Exception(res.get("error", "Unknown error"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Supabase upload failed: {e}")
+
     return supabase.storage().from_(SUPABASE_BUCKET).get_public_url(destination_name)
 
 def cleanup_file(file_path: str):
@@ -95,19 +103,20 @@ def cleanup_file(file_path: str):
         pass
 
 # ========== Endpoints ==========
+
 @app.post("/upload")
 def upload_audio(req: UploadRequest):
     audio_id = short_id()
     downloaded_path = download_youtube_audio(req.yt_url, audio_id)
-    destination = os.path.join(TMP_DIR, f"{audio_id}.mp3")
-    os.rename(downloaded_path, destination)
+    final_path = os.path.join(TMP_DIR, f"{audio_id}.mp3")
+    os.rename(downloaded_path, final_path)
     return {"audio_id": audio_id}
 
 @app.post("/effects")
 def apply_effects(req: EffectsRequest, background_tasks: BackgroundTasks):
     raw_audio_path = os.path.join(TMP_DIR, f"{req.audio_id}.mp3")
     if not os.path.exists(raw_audio_path):
-        raise HTTPException(status_code=404, detail="Original audio not found")
+        raise HTTPException(status_code=404, detail="Original audio not found.")
 
     no_effects = req.speed == 1.0 and req.reverb == 0.0 and not req.bass_boost
     suffix = "rawcopy" if no_effects else f"{req.speed}_{req.reverb}_{req.bass_boost}"
@@ -136,7 +145,6 @@ def stream_effects(effects_id: str):
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type="audio/mpeg")
 
-    # Fallback: stream from Supabase
     supabase_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/processed/{effects_id}.mp3"
     return {"url": supabase_url}
 
@@ -144,9 +152,9 @@ def stream_effects(effects_id: str):
 def download_effects(effects_id: str):
     file_path = os.path.join(TMP_DIR, f"{effects_id}.mp3")
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found or expired")
+        raise HTTPException(status_code=404, detail="File not found or expired.")
     return FileResponse(file_path, filename=f"{effects_id}.mp3", media_type="audio/mpeg")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
