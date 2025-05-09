@@ -59,19 +59,27 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     filters = []
 
-    # Always use rubberband for speed (preserves pitch, smooth)
+    # Pitch + tempo scaling (like tape player) using atempo
     if speed != 1.0:
-        filters.append(f"rubberband=tempo={speed:.2f}")
+        # FFmpeg atempo only accepts values between 0.5 and 2.0, so chain filters if needed
+        atempo_filters = []
+        remaining_speed = speed
+        while remaining_speed < 0.5 or remaining_speed > 2.0:
+            step = 2.0 if remaining_speed > 2.0 else 0.5
+            atempo_filters.append(f"atempo={step}")
+            remaining_speed /= step
+        atempo_filters.append(f"atempo={remaining_speed:.3f}")
+        filters.extend(atempo_filters)
 
-    # Add reverb using aecho
+    # Smooth reverb using freeverb (natural, stereo reverb)
     if reverb > 0:
-        delay = 50 + (reverb * 0.5)
-        decay = 0.2 + (reverb / 200)
-        filters.append(f"aecho=0.8:0.88:{int(delay)}:{decay:.2f}")
+        # reverb level: 0.0 to 1.0 (use reverb/100.0 to scale)
+        mix = min(1.0, reverb / 100.0)
+        filters.append(f"freeverb=roomscale=0.8:mix={mix:.2f}")
 
-    # Add bass boost
+    # Bass boost using equalizer
     if bass_boost:
-        filters.append("bass=g=10")
+        filters.append("bass=g=10")  # You can also try "equalizer=f=60:t=q:w=1:g=10"
 
     filter_str = ",".join(filters) if filters else "anull"
     command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
