@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["ffmpeg-full", "python312Full", "gcc","ladspaPlugins","swh_lv2"]
+nixPkgs = ["ffmpeg-full", "python312Full", "gcc", "sox", "libsox","libsndfile"]
 
 [phases.build]
 cmds = [
