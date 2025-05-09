@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["ffmpeg-full", "python312Full", "gcc"]
+nixPkgs = ["ffmpeg-full", "python312Full", "gcc","ladspaPlugins","swh_lv2"]

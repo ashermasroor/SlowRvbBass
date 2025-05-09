@@ -56,6 +56,14 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
         raise HTTPException(status_code=500, detail="Downloaded file not found.")
     return matching_files[0]
 
+def find_freeverb_plugin() -> str:
+    for root, dirs, files in os.walk("/nix/store"):
+        for f in files:
+            if f == "freeverb_1433.so":
+                return os.path.join(root, f)
+    raise FileNotFoundError("freeverb plugin not found.")
+
+freeverb = find_freeverb_plugin()
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     filters = []
 
@@ -75,7 +83,7 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
     if reverb > 0:
         # reverb level: 0.0 to 1.0 (use reverb/100.0 to scale)
         mix = min(1.0, reverb / 100.0)
-        filters.append(f"freeverb=roomscale=0.8:mix={mix:.2f}")
+        filters.append(f"ladspa={freeverb}:freeverb_1433")
 
     # Bass boost using equalizer
     if bass_boost:
