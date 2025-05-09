@@ -89,12 +89,20 @@ def upload_to_supabase(file_path: str, destination_name: str) -> str:
                 "content-type": mimetypes.guess_type(file_path)[0] or "audio/mpeg",
                 "x-upsert": "true"
             })
-        if not res or "error" in res:
-            raise Exception(res.get("error", "Unknown error"))
+
+        if hasattr(res, "error") and res.error is not None:
+            raise Exception(res.error.message)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Supabase upload failed: {e}")
 
-    return supabase.storage().from_(SUPABASE_BUCKET).get_public_url(destination_name)
+    # Get the public URL safely
+    try:
+        public_url_res = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(destination_name)
+        return public_url_res['publicURL']
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get public URL: {e}")
+
 
 def cleanup_file(file_path: str):
     try:
