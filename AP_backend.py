@@ -137,7 +137,7 @@ def stream_effects(effects_id: str):
         return FileResponse(file_path, media_type="audio/mpeg")
 
     # Fallback: stream from Supabase
-    supabase_url = f"https://{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/processed/{effects_id}.mp3"
+    supabase_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/processed/{effects_id}.mp3"
     return {"url": supabase_url}
 
 @app.get("/download/{effects_id}")
