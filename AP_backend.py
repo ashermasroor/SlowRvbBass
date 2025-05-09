@@ -52,21 +52,26 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return matching_files[0]
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
+    # Skip FFmpeg processing if no effects applied
+    if speed == 1.0 and reverb == 0.0 and not bass_boost:
+        try:
+            subprocess.run(["cp", input_file, output_file], check=True)
+        except subprocess.CalledProcessError:
+            raise HTTPException(status_code=500, detail="Failed to copy audio without effects")
+        return
+
     filters = []
-    if speed and speed != 1.0:
+    if speed != 1.0:
         filters.append(f"atempo={speed}")
-    if reverb and reverb > 0:
+    if reverb > 0:
         delay = 50 + (reverb * 0.5)
         decay = 0.2 + (reverb / 200)
         filters.append(f"aecho=0.8:0.88:{int(delay)}:{decay:.2f}")
     if bass_boost:
         filters.append("bass=g=10")
 
-    filter_str = ",".join(filters) if filters else None
-    command = ["ffmpeg", "-y", "-i", input_file]
-    if filter_str:
-        command += ["-af", filter_str]
-    command.append(output_file)
+    filter_str = ",".join(filters)
+    command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
 
     try:
         subprocess.run(command, check=True)
@@ -89,8 +94,6 @@ def cleanup_file(file_path: str):
     except Exception:
         pass
 
-# Optional: add periodic cleanup of old TMP_DIR files here
-
 # ========== Endpoints ==========
 @app.post("/upload")
 def upload_audio(req: UploadRequest):
@@ -106,7 +109,10 @@ def apply_effects(req: EffectsRequest, background_tasks: BackgroundTasks):
     if not os.path.exists(raw_audio_path):
         raise HTTPException(status_code=404, detail="Original audio not found")
 
-    effects_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{req.audio_id}_{req.speed}_{req.reverb}_{req.bass_boost}").hex[:8]
+    no_effects = req.speed == 1.0 and req.reverb == 0.0 and not req.bass_boost
+    suffix = "rawcopy" if no_effects else f"{req.speed}_{req.reverb}_{req.bass_boost}"
+    effects_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{req.audio_id}_{suffix}").hex[:8]
+
     final_audio_path = os.path.join(TMP_DIR, f"{effects_id}.mp3")
 
     apply_audio_effects(
@@ -130,7 +136,7 @@ def stream_effects(effects_id: str):
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type="audio/mpeg")
 
-    # Optional fallback: stream directly from Supabase
+    # Fallback: stream from Supabase
     supabase_url = f"https://{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/processed/{effects_id}.mp3"
     return {"url": supabase_url}
 
