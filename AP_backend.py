@@ -99,7 +99,8 @@ def upload_to_supabase(file_path: str, destination_name: str) -> str:
     # Get the public URL safely
     try:
         public_url_res = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(destination_name)
-        return public_url_res['publicURL']
+        print (public_url_res)
+        return public_url_res
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get public URL: {e}")
 
