@@ -56,20 +56,11 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
         raise HTTPException(status_code=500, detail="Downloaded file not found.")
     return matching_files[0]
 
-def find_freeverb_plugin() -> str:
-    for root, dirs, files in os.walk("/nix/store"):
-        for f in files:
-            if f == "freeverb_1433.so":
-                return os.path.join(root, f)
-    raise FileNotFoundError("freeverb plugin not found.")
-
-freeverb = find_freeverb_plugin()
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     filters = []
 
-    # Pitch + tempo scaling (like tape player) using atempo
+    # Speed adjustment using chained atempo filters
     if speed != 1.0:
-        # FFmpeg atempo only accepts values between 0.5 and 2.0, so chain filters if needed
         atempo_filters = []
         remaining_speed = speed
         while remaining_speed < 0.5 or remaining_speed > 2.0:
@@ -79,15 +70,14 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
         atempo_filters.append(f"atempo={remaining_speed:.3f}")
         filters.extend(atempo_filters)
 
-    # Smooth reverb using freeverb (natural, stereo reverb)
+    # Reverb using areverb (built-in FFmpeg filter)
     if reverb > 0:
-        # reverb level: 0.0 to 1.0 (use reverb/100.0 to scale)
-        mix = min(1.0, reverb / 100.0)
-        filters.append(f"ladspa={freeverb}:freeverb_1433")
+        wet = min(1.0, reverb / 100.0)  # Normalize to 0.0–1.0
+        filters.append(f"areverb=wet={wet:.2f}")
 
-    # Bass boost using equalizer
+    # Bass boost using FFmpeg equalizer
     if bass_boost:
-        filters.append("bass=g=10")  # You can also try "equalizer=f=60:t=q:w=1:g=10"
+        filters.append("bass=g=10")
 
     filter_str = ",".join(filters) if filters else "anull"
     command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
@@ -96,6 +86,7 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
         subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr.decode()}")
+
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
     try:
