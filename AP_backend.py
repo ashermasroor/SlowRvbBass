@@ -57,24 +57,23 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return matching_files[0]
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
-    if speed == 1.0 and reverb == 0.0 and not bass_boost:
-        try:
-            subprocess.run(["cp", input_file, output_file], check=True)
-        except subprocess.CalledProcessError:
-            raise HTTPException(status_code=500, detail="Failed to copy audio without effects.")
-        return
-
     filters = []
+
+    # Always use rubberband for speed (preserves pitch, smooth)
     if speed != 1.0:
-        filters.append(f"atempo={speed}")
+        filters.append(f"rubberband=tempo={speed:.2f}")
+
+    # Add reverb using aecho
     if reverb > 0:
         delay = 50 + (reverb * 0.5)
         decay = 0.2 + (reverb / 200)
         filters.append(f"aecho=0.8:0.88:{int(delay)}:{decay:.2f}")
+
+    # Add bass boost
     if bass_boost:
         filters.append("bass=g=10")
 
-    filter_str = ",".join(filters)
+    filter_str = ",".join(filters) if filters else "anull"
     command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
 
     try:
