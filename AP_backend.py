@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+import glob
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
@@ -86,7 +87,11 @@ def process_audio(request: ProcessRequest, background_tasks: BackgroundTasks):
     download_youtube_audio(request.yt_url, raw_audio_path)
 
     # Replace placeholder from yt-dlp
-    downloaded_file = raw_audio_path.replace("%(ext)s", "mp3")
+    matching_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
+    if not matching_files:
+        raise HTTPException(status_code=500, detail="Downloaded file not found")
+    downloaded_file = matching_files[0]
+
 
     # Apply audio effects
     apply_audio_effects(
