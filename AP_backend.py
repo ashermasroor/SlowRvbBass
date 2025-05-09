@@ -8,6 +8,8 @@ import subprocess
 import glob
 import mimetypes
 from supabase import create_client, Client
+from pysndfx import AudioEffectsChain
+
 
 app = FastAPI()
 
@@ -56,36 +58,23 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
         raise HTTPException(status_code=500, detail="Downloaded file not found.")
     return matching_files[0]
 
+
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
-    filters = []
+    fx = AudioEffectsChain()
 
-    # Speed adjustment using chained atempo filters
     if speed != 1.0:
-        atempo_filters = []
-        remaining_speed = speed
-        while remaining_speed < 0.5 or remaining_speed > 2.0:
-            step = 2.0 if remaining_speed > 2.0 else 0.5
-            atempo_filters.append(f"atempo={step}")
-            remaining_speed /= step
-        atempo_filters.append(f"atempo={remaining_speed:.3f}")
-        filters.extend(atempo_filters)
+        fx = fx.tempo(speed)  # tempo (preserves pitch)
 
-    # Reverb using areverb (built-in FFmpeg filter)
     if reverb > 0:
-        wet = min(1.0, reverb / 100.0)  # Normalize to 0.0–1.0
-        filters.append(f"areverb=wet={wet:.2f}")
+        fx = fx.reverb(reverberance=reverb)  # reverb level: 0-100
 
-    # Bass boost using FFmpeg equalizer
     if bass_boost:
-        filters.append("bass=g=10")
-
-    filter_str = ",".join(filters) if filters else "anull"
-    command = ["ffmpeg", "-y", "-i", input_file, "-af", filter_str, output_file]
+        fx = fx.bass(gain=10)  # boost bass by 10dB
 
     try:
-        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr.decode()}")
+        fx(input_file, output_file)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audio processing error: {e}")
 
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
