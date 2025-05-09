@@ -17,8 +17,8 @@ os.makedirs(TMP_DIR, exist_ok=True)
 # Supabase config
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_BUCKET = "your-bucket-name"  # Replace with your actual bucket name
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
+create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========== Models ==========
 class UploadRequest(BaseModel):
