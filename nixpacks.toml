@@ -1,7 +1,2 @@
 [phases.setup]
 nixPkgs = ["ffmpeg-full", "python312Full", "gcc", "sox","libsndfile"]
-
-[phases.build]
-cmds = [
-    "apt-get install sox libsox-fmt-all",
-]
