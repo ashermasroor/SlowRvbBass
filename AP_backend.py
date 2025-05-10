@@ -43,19 +43,39 @@ def convert_to_mp3(input_path: str, output_path: str):
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"MP3 conversion error: {e.stderr.decode()}")
 
-def download_youtube_audio(yt_url: str, audio_id: str) -> str:
-    output_path = os.path.join(TMP_DIR, f"{audio_id}_raw.wav")
-    try:
-        subprocess.run([
-            "yt-dlp",
-            "-x", "--audio-format", "wav",
-            "-o", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
-            yt_url
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download YouTube audio: {e}")
+def download_audio(url: str, audio_id: str) -> str:
+    if "spotify.com" in url:
+        output_template = os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s")
+        try:
+            subprocess.run([
+                "spotdl",
+                url,
+                "--output", output_template,
+                "--audio", "wav"
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(status_code=400, detail=f"Failed to download Spotify audio: {e.stderr.decode() if e.stderr else str(e)}")
 
-    return output_path
+    elif "youtube.com" in url or "youtu.be" in url:
+        try:
+            subprocess.run([
+                "yt-dlp",
+                "-x", "--audio-format", "wav",
+                "-o", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
+                url
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(status_code=400, detail=f"Failed to download YouTube audio: {e.stderr.decode() if e.stderr else str(e)}")
+
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported URL. Only YouTube and Spotify URLs are supported.")
+
+    # Return the actual WAV file path (find the .wav file matching the pattern)
+    matching_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.wav"))
+    if not matching_files:
+        raise HTTPException(status_code=500, detail="Audio file not found after download.")
+    return matching_files[0]
+
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
@@ -102,7 +122,7 @@ def cleanup_file(file_path: str):
 @app.post("/upload")
 def upload_audio(req: UploadRequest):
     audio_id = short_id()
-    downloaded_path = download_youtube_audio(req.yt_url, audio_id)
+    downloaded_path = download_audio(req.yt_url, audio_id)
     final_path = os.path.join(TMP_DIR, f"{audio_id}.wav")
     os.rename(downloaded_path, final_path)
     return {"audio_id": audio_id}
