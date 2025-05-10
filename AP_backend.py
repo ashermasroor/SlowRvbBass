@@ -65,7 +65,7 @@ def download_audio(url: str, audio_id: str) -> str:
                 "spotdl",
                 url,
                 "--output", output_path,
-                "--audio", "wav"
+                "--output-format", "wav"
             ], check=True)
         except subprocess.CalledProcessError as e:
             raise HTTPException(status_code=400, detail=f"Failed to download Spotify audio: {e}")
