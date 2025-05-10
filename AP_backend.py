@@ -61,7 +61,7 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
     fx = AudioEffectsChain()
 
     if speed != 1.0:
-        fx = fx.tempo(speed)
+        fx = fx.tempo(speed,'s')
     if reverb > 0:
         fx = fx.reverb(reverberance=reverb)
     if bass_boost:
