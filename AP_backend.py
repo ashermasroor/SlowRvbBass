@@ -59,16 +59,22 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
+
     if speed != 1.0:
         fx = fx.tempo(speed)
     if reverb > 0:
         fx = fx.reverb(reverberance=reverb)
     if bass_boost:
         fx = fx.bass(gain=10)
+
+    # Apply a smoothing filter
+    fx = fx.lowpass(3000)  # cutoff frequency around 3kHz — adjust as needed
+
     try:
         fx(input_file, output_file)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio processing error: {e}")
+
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
     try:
