@@ -1,2 +1,5 @@
 venv
 .env
+cookies.txt
+cookies_base64.txt
+cookies_encoder.py

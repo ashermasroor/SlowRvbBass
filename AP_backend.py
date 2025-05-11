@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
+import base64
 import os
 import uuid
 import subprocess
@@ -22,6 +23,17 @@ if not all([SUPABASE_URL, SUPABASE_KEY, SUPABASE_BUCKET]):
     raise Exception("Missing Supabase environment variables.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+YT_COOKIES_BASE64 = os.getenv("YT_COOKIES_BASE64")
+
+if YT_COOKIES_BASE64:
+    try:
+        with open("cookies.txt","wb") as f:
+            f.write(base64.b64decode(YT_COOKIES_BASE64))
+    except Exception as e:
+        raise Exception(f"Failed to decode YouTube cookies:"+str(e))
+else:
+    raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
 
 class UploadRequest(BaseModel):
     yt_url: str
@@ -49,11 +61,18 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
         subprocess.run([
             "yt-dlp",
             "-x", "--audio-format", "wav",
+            "--cookies", "cookies.txt",  # <-- assuming you're using cookies
             "-o", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
             yt_url
-        ], check=True)
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download YouTube audio: {e}")
+        error_output = e.stderr.decode()
+        if "Sign in to confirm you’re not a bot" in error_output or "HTTP Error 403" in error_output:
+            raise HTTPException(
+                status_code=403,
+                detail="Download failed: YouTube requires login or cookies may have expired. Please refresh the cookies."
+            )
+        raise HTTPException(status_code=400, detail=f"Failed to download YouTube audio: {error_output}")
 
     return output_path
 
