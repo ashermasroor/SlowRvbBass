@@ -34,7 +34,7 @@ pysndfx
 realtime==2.4.3
 six==1.17.0
 sniffio==1.3.1
-spotdl
+# spotdl
 starlette==0.46.2
 storage3==0.11.3
 StrEnum==0.4.15
