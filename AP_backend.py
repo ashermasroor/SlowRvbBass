@@ -1,10 +1,9 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from spotdl import Spotdl
-from spotdl.utils.config import DEFAULT_CONFIG
-from spotdl.utils.spotify import SpotifyClient
-from spotdl.utils.search     import parse_query
+from spotdl.utils.config import create_settings
+from spotdl.download.downloader import Downloader
+from spotdl.search.song_gatherer import gather_songs
 from typing import Optional
 import base64
 import os
@@ -19,26 +18,6 @@ import re
 app = FastAPI()
 TMP_DIR = "tmp_audio"
 os.makedirs(TMP_DIR, exist_ok=True)
-
-# Initialize SpotifyClient once
-SpotifyClient.init(
-    client_id=os.getenv("SPOTIPY_CLIENT_ID"),
-    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
-    user_auth=False
-)
-
-# Initialize SpotDL object with a custom output path
-spotdl_instance = Spotdl({
-    **DEFAULT_CONFIG,
-    "client_id":f"{os.getenv("SPOTIPY_CLIENT_ID")}",
-    "client_secret":f"{os.getenv("SPOTIPY_CLIENT_SECRET")}",
-    "output": TMP_DIR,
-    "format": "mp3",
-    "ffmpeg": "ffmpeg",
-    "threads": 1,
-    "overwrite": True,
-    "cookie_file": "cookies.txt"
-})
 
 # Supabase config
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -59,6 +38,20 @@ if YT_COOKIES_BASE64:
         raise Exception(f"Failed to decode YouTube cookies:" + str(e))
 else:
     raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
+
+# SpotDL settings for latest version
+settings = create_settings({
+    "client_id": os.getenv("SPOTIPY_CLIENT_ID"),
+    "client_secret": os.getenv("SPOTIPY_CLIENT_SECRET"),
+    "output": TMP_DIR,
+    "format": "mp3",
+    "ffmpeg": "ffmpeg",
+    "threads": 1,
+    "overwrite": True,
+    "cookie_file": "cookies.txt"
+})
+
+downloader = Downloader(settings)
 
 class UploadRequest(BaseModel):
     url: str  # Only one URL field
@@ -102,29 +95,24 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return output_path
 
 def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
-    output_template = os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s")
-
     try:
-        result = subprocess.run([
-            "spotdl",
-            spotify_url,
-            "--output", output_template,
-            "--format", "mp3",
-            "--ffmpeg", "ffmpeg",
-            "--overwrite"
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Spotify download failed: {e.stderr.decode()}"
-        )
+        songs = gather_songs([spotify_url], settings)
+        if not songs:
+            raise HTTPException(status_code=404, detail="No songs found for the given Spotify URL.")
 
-    # SpotDL may rename the file based on song metadata, so we use glob
-    downloaded_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
-    if not downloaded_files:
-        raise HTTPException(status_code=404, detail="No file downloaded from SpotDL.")
+        song = songs[0]
+        downloader.download_song(song)
 
-    return downloaded_files[0]
+        downloaded_files = glob.glob(os.path.join(TMP_DIR, "*.mp3"))
+        if not downloaded_files:
+            raise HTTPException(status_code=500, detail="No files downloaded.")
+
+        renamed_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
+        os.rename(downloaded_files[0], renamed_path)
+        return renamed_path
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Spotify download failed: {str(e)}")
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
