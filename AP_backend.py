@@ -49,7 +49,7 @@ spotdl_args = argparse.Namespace(
     threads=1,
     overwrite=True,
     cookie_file="cookies.txt",
-    config=None  # Add this line to satisfy the `.config` attribute check
+    config=None  # required internally by SpotDL
 )
 
 settings = create_settings(spotdl_args)
