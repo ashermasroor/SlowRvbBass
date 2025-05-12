@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from spotdl import Spotdl
 from spotdl.utils.config import DEFAULT_CONFIG
 from spotdl.utils.spotify import SpotifyClient
 from spotdl.utils.search     import parse_query
@@ -14,7 +15,6 @@ import mimetypes
 from supabase import create_client, Client
 from pysndfx import AudioEffectsChain
 import re
-import spotdl
 
 app = FastAPI()
 TMP_DIR = "tmp_audio"
@@ -28,7 +28,7 @@ SpotifyClient.init(
 )
 
 # Initialize SpotDL object with a custom output path
-spotdl_instance = spotdl.Spotdl({
+spotdl_instance = Spotdl({
     **DEFAULT_CONFIG,
     "output": TMP_DIR,
     "format": "mp3",
