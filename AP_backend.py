@@ -30,8 +30,8 @@ SpotifyClient.init(
 # Initialize SpotDL object with a custom output path
 spotdl_instance = Spotdl({
     **DEFAULT_CONFIG,
-    "client_id":os.getenv("SPOTIPY_CLIENT_ID"),
-    "client_secret":os.getenv("SPOTIPY_CLIENT_SECRET"),
+    "client_id":f"{os.getenv("SPOTIPY_CLIENT_ID")}",
+    "client_secret":f"{os.getenv("SPOTIPY_CLIENT_SECRET")}",
     "output": TMP_DIR,
     "format": "mp3",
     "ffmpeg": "ffmpeg",
