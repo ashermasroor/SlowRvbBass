@@ -1,6 +1,10 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from spotdl import Spotdl
+from spotdl.utils.config import DEFAULT_CONFIG
+from spotdl.utils.spotify import SpotifyClient
+from spotdl.utils.search     import parse_query
 from typing import Optional
 import base64
 import os
@@ -15,6 +19,24 @@ import re
 app = FastAPI()
 TMP_DIR = "tmp_audio"
 os.makedirs(TMP_DIR, exist_ok=True)
+
+# Initialize SpotifyClient once
+SpotifyClient.init(
+    client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+    client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+    user_auth=False
+)
+
+# Initialize SpotDL object with a custom output path
+spotdl_instance = Spotdl({
+    **DEFAULT_CONFIG,
+    "output": TMP_DIR,
+    "format": "mp3",
+    "ffmpeg": "ffmpeg",
+    "threads": 1,
+    "overwrite": True,
+    "cookie_file": "cookies.txt"
+})
 
 # Supabase config
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -78,22 +100,36 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return output_path
 
 def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
-    output_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
     try:
-        subprocess.run([
-            "spotdl", spotify_url,
-            "--output", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
-            "--format", "mp3",
-            "--default-search", "ytsearch"
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download Spotify audio: {e.stderr.decode()}")
+        # Parse the query (song/playlist/album)
+        songs = parse_query(
+            query=[spotify_url],
+            threads=1,
+            use_ytm_data=False,
+            playlist_numbering=False,
+            album_type="single",
+            playlist_retain_track_cover=True
+        )
 
-    # Resolve actual downloaded file (in case spotdl renames it)
-    downloaded_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
-    if not downloaded_files:
-        raise HTTPException(status_code=404, detail="Spotify download failed or returned no file.")
-    return downloaded_files[0]
+        if not songs:
+            raise HTTPException(status_code=404, detail="No songs found for the given Spotify URL.")
+
+        song = songs[0]
+        spotdl_instance.download_song(song)
+
+        # Find downloaded file (it may be renamed by spotdl)
+        downloaded_files = glob.glob(os.path.join(TMP_DIR, "*.mp3"))
+        if not downloaded_files:
+            raise HTTPException(status_code=500, detail="SpotDL did not return any file.")
+
+        # Rename it to match the expected audio_id name
+        renamed_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
+        os.rename(downloaded_files[0], renamed_path)
+        return renamed_path
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Spotify download failed: {str(e)}")
+
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
