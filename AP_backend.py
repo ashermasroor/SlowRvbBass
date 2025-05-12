@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from spotdl.utils.config import create_settings
 from spotdl.download.downloader import Downloader
 from typing import Optional
+import argparse
 import base64
 import os
 import uuid
@@ -39,16 +40,19 @@ else:
     raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
 
 # SpotDL settings for latest version
-settings = create_settings({
-    "client_id": os.getenv("SPOTIPY_CLIENT_ID"),
-    "client_secret": os.getenv("SPOTIPY_CLIENT_SECRET"),
-    "output": TMP_DIR,
-    "format": "mp3",
-    "ffmpeg": "ffmpeg",
-    "threads": 1,
-    "overwrite": True,
-    "cookie_file": "cookies.txt"
-})
+spotdl_args = argparse.Namespace(
+    client_id=os.getenv("SPOTIPY_CLIENT_ID"),
+    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
+    output=TMP_DIR,
+    format="mp3",
+    ffmpeg="ffmpeg",
+    threads=1,
+    overwrite=True,
+    cookie_file="cookies.txt",
+    config=None  # Add this line to satisfy the `.config` attribute check
+)
+
+settings = create_settings(spotdl_args)
 
 downloader = Downloader(settings)
 
