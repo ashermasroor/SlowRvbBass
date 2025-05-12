@@ -3,7 +3,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from spotdl.utils.config import create_settings
 from spotdl.download.downloader import Downloader
-from spotdl.search.song_gatherer import gather_songs
 from typing import Optional
 import base64
 import os
@@ -95,24 +94,23 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return output_path
 
 def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
+    output_template = os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s")
     try:
-        songs = gather_songs([spotify_url], settings)
-        if not songs:
-            raise HTTPException(status_code=404, detail="No songs found for the given Spotify URL.")
+        subprocess.run([
+            "spotdl", spotify_url,
+            "--output", output_template,
+            "--ffmpeg", "ffmpeg",
+            "--overwrite", "force"
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        song = songs[0]
-        downloader.download_song(song)
-
-        downloaded_files = glob.glob(os.path.join(TMP_DIR, "*.mp3"))
+        downloaded_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw*.mp3"))
         if not downloaded_files:
             raise HTTPException(status_code=500, detail="No files downloaded.")
+        return downloaded_files[0]
 
-        renamed_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
-        os.rename(downloaded_files[0], renamed_path)
-        return renamed_path
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Spotify download failed: {e.stderr.decode()}")
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Spotify download failed: {str(e)}")
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
