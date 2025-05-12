@@ -39,23 +39,6 @@ if YT_COOKIES_BASE64:
 else:
     raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
 
-# SpotDL settings for latest version
-spotdl_args = argparse.Namespace(
-    client_id=os.getenv("SPOTIPY_CLIENT_ID"),
-    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
-    output=TMP_DIR,
-    format="mp3",
-    ffmpeg="ffmpeg",
-    threads=1,
-    overwrite=True,
-    cookie_file="cookies.txt",
-    config=None  # required internally by SpotDL
-)
-
-settings = create_settings(spotdl_args)
-
-downloader = Downloader(settings)
-
 class UploadRequest(BaseModel):
     url: str  # Only one URL field
 
