@@ -83,7 +83,8 @@ def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
         subprocess.run([
             "spotdl", spotify_url,
             "--output", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
-            "--format", "mp3"
+            "--format", "mp3",
+            "--default-search", "ytsearch"
         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=400, detail=f"Failed to download Spotify audio: {e.stderr.decode()}")
