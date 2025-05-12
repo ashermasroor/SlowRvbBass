@@ -100,35 +100,33 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
     return output_path
 
 def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
+    output_template = os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s")
+
     try:
-        # Parse the query (song/playlist/album)
-        songs = parse_query(
-            query=[spotify_url],
-            threads=1,
-            use_ytm_data=False,
-            playlist_numbering=False,
-            album_type="single",
-            playlist_retain_track_cover=True
+        subprocess.run([
+            "spotdl",
+            spotify_url,
+            "--output", output_template,
+            "--format", "mp3",
+            "--ffmpeg", "ffmpeg",
+            "--overwrite"
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Spotify download failed: {e.stderr.decode()}"
         )
 
-        if not songs:
-            raise HTTPException(status_code=404, detail="No songs found for the given Spotify URL.")
+    # Search for the file (SpotDL might rename the file based on metadata)
+    downloaded_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
+    if not downloaded_files:
+        raise HTTPException(
+            status_code=404,
+            detail="No file downloaded from SpotDL."
+        )
 
-        song = songs[0]
-        spotdl_instance.download_song(song)
+    return downloaded_files[0]
 
-        # Find downloaded file (it may be renamed by spotdl)
-        downloaded_files = glob.glob(os.path.join(TMP_DIR, "*.mp3"))
-        if not downloaded_files:
-            raise HTTPException(status_code=500, detail="SpotDL did not return any file.")
-
-        # Rename it to match the expected audio_id name
-        renamed_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
-        os.rename(downloaded_files[0], renamed_path)
-        return renamed_path
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Spotify download failed: {str(e)}")
 
 
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
