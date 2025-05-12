@@ -10,6 +10,7 @@ import glob
 import mimetypes
 from supabase import create_client, Client
 from pysndfx import AudioEffectsChain
+import re
 
 app = FastAPI()
 TMP_DIR = "tmp_audio"
@@ -31,13 +32,12 @@ if YT_COOKIES_BASE64:
         with open("cookies.txt","wb") as f:
             f.write(base64.b64decode(YT_COOKIES_BASE64))
     except Exception as e:
-        raise Exception(f"Failed to decode YouTube cookies:"+str(e))
+        raise Exception(f"Failed to decode YouTube cookies:" + str(e))
 else:
     raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
 
 class UploadRequest(BaseModel):
-    yt_url: Optional[str] = None
-    spotify_url: Optional[str] = None
+    url: str  # Only one URL field
 
 class EffectsRequest(BaseModel):
     audio_id: str
@@ -99,7 +99,7 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
     fx = AudioEffectsChain()
 
     if speed != 1.0:
-        fx = fx.tempo(speed,'s')
+        fx = fx.tempo(speed, 's')
     if reverb > 0:
         fx = fx.reverb(reverberance=reverb)
     if bass_boost:
@@ -138,12 +138,14 @@ def cleanup_file(file_path: str):
 @app.post("/upload")
 def upload_audio(req: UploadRequest):
     audio_id = short_id()
-    if req.yt_url:
-        downloaded_path = download_youtube_audio(req.yt_url, audio_id)
-    elif req.spotify_url:
-        downloaded_path = download_spotify_audio(req.spotify_url, audio_id)
+    url = req.url
+
+    if "youtube.com" in url or "youtu.be" in url:
+        downloaded_path = download_youtube_audio(url, audio_id)
+    elif "spotify.com" in url:
+        downloaded_path = download_spotify_audio(url, audio_id)
     else:
-        raise HTTPException(status_code=400, detail="You must provide either a YouTube or Spotify URL.")
+        raise HTTPException(status_code=400, detail="Invalid URL: Must be YouTube or Spotify URL.")
 
     final_path = os.path.join(TMP_DIR, f"{audio_id}.wav")
     convert_to_mp3(downloaded_path, final_path)
