@@ -36,7 +36,8 @@ else:
     raise Exception("Missing YT_COOKIES_BASE64 environment variable.")
 
 class UploadRequest(BaseModel):
-    yt_url: str
+    yt_url: Optional[str] = None
+    spotify_url: Optional[str] = None
 
 class EffectsRequest(BaseModel):
     audio_id: str
@@ -61,7 +62,7 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
         subprocess.run([
             "yt-dlp",
             "-x", "--audio-format", "wav",
-            "--cookies", "cookies.txt",  # <-- assuming you're using cookies
+            "--cookies", "cookies.txt",
             "-o", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
             yt_url
         ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -76,6 +77,23 @@ def download_youtube_audio(yt_url: str, audio_id: str) -> str:
 
     return output_path
 
+def download_spotify_audio(spotify_url: str, audio_id: str) -> str:
+    output_path = os.path.join(TMP_DIR, f"{audio_id}_raw.mp3")
+    try:
+        subprocess.run([
+            "spotdl", spotify_url,
+            "--output", os.path.join(TMP_DIR, f"{audio_id}_raw.%(ext)s"),
+            "--format", "mp3"
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to download Spotify audio: {e.stderr.decode()}")
+
+    # Resolve actual downloaded file (in case spotdl renames it)
+    downloaded_files = glob.glob(os.path.join(TMP_DIR, f"{audio_id}_raw.*"))
+    if not downloaded_files:
+        raise HTTPException(status_code=404, detail="Spotify download failed or returned no file.")
+    return downloaded_files[0]
+
 def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb: float, bass_boost: bool):
     fx = AudioEffectsChain()
 
@@ -86,14 +104,12 @@ def apply_audio_effects(input_file: str, output_file: str, speed: float, reverb:
     if bass_boost:
         fx = fx.bass(gain=10)
 
-    # Apply a smoothing filter
-    fx = fx.lowpass(3000)  # cutoff frequency around 3kHz — adjust as needed
+    fx = fx.lowpass(3000)
 
     try:
         fx(input_file, output_file)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio processing error: {e}")
-
 
 def upload_to_supabase(file_path: str, destination_name: str) -> str:
     try:
@@ -121,9 +137,15 @@ def cleanup_file(file_path: str):
 @app.post("/upload")
 def upload_audio(req: UploadRequest):
     audio_id = short_id()
-    downloaded_path = download_youtube_audio(req.yt_url, audio_id)
+    if req.yt_url:
+        downloaded_path = download_youtube_audio(req.yt_url, audio_id)
+    elif req.spotify_url:
+        downloaded_path = download_spotify_audio(req.spotify_url, audio_id)
+    else:
+        raise HTTPException(status_code=400, detail="You must provide either a YouTube or Spotify URL.")
+
     final_path = os.path.join(TMP_DIR, f"{audio_id}.wav")
-    os.rename(downloaded_path, final_path)
+    convert_to_mp3(downloaded_path, final_path)
     return {"audio_id": audio_id}
 
 @app.post("/effects")
